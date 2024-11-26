@@ -15,7 +15,7 @@ import sys
 import numpy as np
 import random
 from scipy.optimize import minimize
-from functions import read_mps, normalization, site_normalization, calculate_Sz, calculate_ENE, set_grad_zero, orth_centre, heisenberg_hamiltonian
+from functions import read_mps, normalization, site_normalization, calculate_Sz, calculate_ENE, orth_centre, heisenberg_hamiltonian
 
 #####*********************************************************************#####
 bond_dim, batch_size, num_epochs, learn_rate, l2_reg, inp_dim, inp_file_pth, inp_file, ref_file, input_list, det = readInput()
