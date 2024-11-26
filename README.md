@@ -1,5 +1,3 @@
-![mps_bot](https://user-images.githubusercontent.com/63242780/181235055-1463e0e7-462f-4f0c-b4cb-a52d6a58cbc9.jpg)
-
 # Introduction
 
 Matrix product state (MPS) is a popular wave function ansatz in electronic structure theory. MPS can be obtained from multi-dimensional exact coefficient tensor via singular value decomposition (SVD). It  efficiently compress the multi-dimensional exact coefficient tensor to avoid the curse of dimensionality and computational cost of higher rank tensor. 
