@@ -1,0 +1,12 @@
+***startSetup***
+M,10
+batch_size,1000
+num_epochs,2
+learn_rate,1e-2
+l2_reg,1e-10
+inp_dim,18
+csv_column,0,17,18,19
+path,/home/dglab/mandira/ML-MPS-mandira/LC_18/github_code/data/
+input_file,input_train_LC_18site.csv
+reference_file,tebd_M10_itensor_1.dat
+***endSetup***
