@@ -112,31 +112,6 @@ def calculate_ENE(mps, ham):
 
 #####********************************************************************************************************#####
 
-def set_grad_zero(file_name, shape):
-    fin = open(file_name)
-    lines = len(fin.readlines())
-    fin.close()
-
-    for idx in range(lines):
-        data = np.genfromtxt(file_name, dtype = str, skip_header=idx,  max_rows=1)
-        s = int(data[0])-1
-        for l in range(int(data[1])):
-            for r in range(int(data[2]),int(shape[2])):
-                for i in range(int(shape[3])):
-                    param.grad[s,l,r,i] = 0.0
-                    #print("slri:", s,l,r,i)
-
-        s = int(data[0])-1
-        for l in range(int(data[1]), int(shape[1])):
-            for r in range(int(shape[2])):
-                for i in range(int(shape[3])):
-                    param.grad[s,l,r,i] = 0.0
-                    #print("slri:", s,l,r,i)
-
-
-#####******************************************************************************************************#####
-
-
 def orth_centre(mps, site):
 
     ln = len(mps)
