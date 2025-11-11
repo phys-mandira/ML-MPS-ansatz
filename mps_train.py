@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import time
+import numpy as np
+np.bool = np.bool_
 import torch
 from torchvision import transforms, datasets
 from torch.utils.data import Dataset,ConcatDataset,SubsetRandomSampler
@@ -9,10 +11,12 @@ from torch.utils.data import random_split
 from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score,mean_squared_error
 from numpy import vstack
+import warnings
+warnings.filterwarnings("ignore")
+
 from mps_setup import readInput           
 import os
 import sys
-import numpy as np
 import random
 from scipy.optimize import minimize
 from functions import read_mps, normalization, site_normalization, calculate_Sz, calculate_ENE, orth_centre, heisenberg_hamiltonian
@@ -26,7 +30,7 @@ from torchmps import MPS
 torch.manual_seed(0)
 
 # Initialize the MPS module
-mps = MPS(f_name=ref_file, input_dim=inp_dim, feature_dim = 2, bond_dim=bond_dim,)
+mps = MPS(f_name=inp_file_pth+ref_file, input_dim=inp_dim, feature_dim = 2, bond_dim=bond_dim,)
 
 #####********************************************************************#####
 # Get the training and test sets
@@ -66,86 +70,81 @@ def prepare_data(path):
 
 #####*******************************************************************************************************#####
 
+# --- Initialize ---
 ham = heisenberg_hamiltonian()
-start = time.time()
+path = inp_file_pth + inp_file
 
-path = inp_file_pth+inp_file
 train_dl, test_dl = prepare_data(path)
-
 dataset = ConcatDataset([train_dl, test_dl])
 
 loss_fun = torch.nn.MSELoss()
 optimizer = torch.optim.Adam(mps.parameters(), lr=learn_rate, weight_decay=l2_reg)
-#optimizer = torch.optim.SGD(mps.parameters(), lr=learn_rate, weight_decay=l2_reg, momentum=0.9)
 
-torch.save(mps.state_dict(), inp_file_pth+"model_M"+str(bond_dim)+".pth")
-mps.load_state_dict(torch.load(inp_file_pth+"model_M"+str(bond_dim)+".pth",weights_only=True))
-f1 = open(inp_file_pth+"train_test_loss_M"+str(bond_dim)+".out", "w")
-f1.write("#Epoch" + "\t" + "train_loss" + "\t" + "test_loss" + "\n")
+model_file = f"{inp_file_pth}model_M{bond_dim}.pth"
+torch.save(mps.state_dict(), model_file)
+mps.load_state_dict(torch.load(model_file, weights_only=True))
 
-f2 = open(inp_file_pth+"epoch_energy_sz_M"+str(bond_dim)+".out","w")
-f2.write("#Epoch"+"\t"+"Energy"+"\t"+"Sz"+"\n")
+# --- Output Files ---
+train_test_loss_file = f"{inp_file_pth}train_test_loss_M{bond_dim}.out"
+train_output_file = f"{inp_file_pth}mps_train_output_M{bond_dim}.out"
+test_output_file = f"{inp_file_pth}mps_test_output_M{bond_dim}.out"
 
-for epoch_num in range(1, num_epochs + 1):
-    running_loss = 0.0
-    running_loss_test = 0.0
+with open(train_test_loss_file, "w") as f1:
+    f1.write("#Epoch\ttrain_loss\ttest_loss\n")
 
-    for i, (inputs, targets ,dets) in enumerate(train_dl): 
-        scores = mps(inputs)
-        loss = loss_fun(scores, targets)
+    for epoch_num in range(1, num_epochs + 1):
+        # --- Training Loop ---
+        mps.train()
+        total_train_loss = 0.0
+        for inputs, targets, _ in train_dl:
+            scores = mps(inputs)
+            loss = loss_fun(scores, targets)
 
-        # Backpropagate and update parameters
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-    
-        running_loss += loss.item()
-    
-    epoch_loss = running_loss/len(train_dl)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    mps.eval()
-    for i, (inputs, targets, dets) in enumerate(test_dl): 
-        scores = mps(inputs)
-        loss = loss_fun(scores, targets)
-        running_loss_test += loss.item()
+            total_train_loss += loss.item()
 
-    epoch_loss_test = running_loss_test/len(test_dl)
- 
-    #calculate energy and sz at each epoch
-    mps_cut = read_mps(mps)
-    mps_cut_1 = mps_cut.copy()
-    totalSz = calculate_Sz(mps_cut)
-    ene1 = calculate_ENE(mps_cut_1, ham)
+        epoch_train_loss = total_train_loss / len(train_dl)
 
-    f1.write(str(epoch_num) + "\t" + str(epoch_loss) + "\t" + str(epoch_loss_test) + "\n")
-    f2.write(str(epoch_num)+"\t"+str(ene1)+"\t"+str(totalSz)+"\n")
+        # --- Testing Loop ---
+        mps.eval()
+        total_test_loss = 0.0
+        with torch.no_grad():
+            for inputs, targets, _ in test_dl:
+                scores = mps(inputs)
+                loss = loss_fun(scores, targets)
+                total_test_loss += loss.item()
 
-f1.close()
-f2.close()
+        epoch_test_loss = total_test_loss / len(test_dl)
+        f1.write(f"{epoch_num}\t{epoch_train_loss}\t{epoch_test_loss}\n")
 
-f3 = open(inp_file_pth+"mps_train_output_M"+str(bond_dim)+".out","w")
-for i, (inputs, targets ,dets) in enumerate(train_dl):
-    scores = mps(inputs)
-    scores = scores.detach().numpy()
-    scores = np.reshape(scores,(len(scores),1))
-    actual = targets.numpy()
-    det = dets.numpy()
-    for j in range(len(actual)):
-        f3.write(str(int(det[j][0]))+"\t"+str(actual[j][0])+"\t"+str(scores[j][0])+"\n")
-f3.close()
+# --- Energy and Sz ---
+mps_cut = read_mps(mps)
+mps_cut_1 = mps_cut.copy()
+totalSz = calculate_Sz(mps_cut)
+totalEne = calculate_ENE(mps_cut_1, ham)
 
-f4 = open(inp_file_pth+"mps_test_output_M"+str(bond_dim)+".out","w")
-for i, (inputs, targets ,dets) in enumerate(test_dl):
-    scores = mps(inputs)
-    scores = scores.detach().numpy()
-    scores = np.reshape(scores,(len(scores),1))
-    actual = targets.numpy()
-    det = dets.numpy()
-    for j in range(len(actual)):
-        f4.write(str(int(det[j][0]))+"\t"+str(actual[j][0])+"\t"+str(scores[j][0])+"\n")
+print("Total energy:", totalEne)
+print("Total Sz:", totalSz)
 
-f4.close()
+# --- Helper function to save outputs ---
+def save_outputs(dataloader, filename):
+    with open(filename, "w") as f:
+        with torch.no_grad():
+            for inputs, targets, dets in dataloader:
+                scores = mps(inputs).detach().cpu().numpy().reshape(-1, 1)
+                actual = targets.cpu().numpy()
+                det = dets.cpu().numpy()
+                for d, a, s in zip(det, actual, scores):
+                    f.write(f"{int(d[0])}\t{a[0]}\t{s[0]}\n")
 
-torch.save(mps.state_dict(), inp_file_pth+"converged_model_M"+str(bond_dim)+".pth")
-os.remove(inp_file_pth+"model_M"+str(bond_dim)+".pth")
+# --- Save train/test outputs ---
+save_outputs(train_dl, train_output_file)
+save_outputs(test_dl, test_output_file)
+
+# --- Save final model ---
+torch.save(mps.state_dict(), f"{inp_file_pth}converged_model_M{bond_dim}.pth")
+os.remove(model_file)
 

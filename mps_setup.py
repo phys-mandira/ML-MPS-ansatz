@@ -29,13 +29,16 @@ def readInput():
 
             if toks[0] == 'path':
                 path = str(toks[1]).strip()
+            
             if toks[0] == 'input_file':
                 input_file = str(toks[1]).strip()
+            
             if toks[0] == 'csv_column':
                 start = int(toks[1])
                 end = int(toks[2])
                 det = int(toks[3])
                 ci = int(toks[4])
+            
             if toks[0] == 'reference_file':
                 reference_file = str(toks[1]).strip()
 
@@ -43,6 +46,8 @@ def readInput():
     for i in range(start,end+1):
         inp_list.append(i)
     inp_list.append(ci)
+    
+
     return M, batch_size, num_epochs, learn_rate, l2_reg, inp_dim, path, input_file, reference_file, inp_list, det
 
 

@@ -4,120 +4,87 @@ import torch.nn as nn
 
 class MPS(nn.Module):
     
-    def __init__(
-        self,
-        f_name,
-        input_dim,
-        bond_dim,
-        feature_dim=2,
-        init_std=1e-9,
-    ):
+    def __init__(self, f_name, input_dim, bond_dim, feature_dim=2, init_std=1e-9,):
         super().__init__()
+
+        # Set the MPS attributes
+        self.feature_dim = feature_dim
+        self.input_dim = input_dim
+        self.bond_dim = bond_dim
+        self.f_name = f_name
+        self.init_std = init_std
+
 
         # Initialize the core tensor defining our model near the identity
         # This tensor holds all of the trainable parameters of our model
         
         tensor_list = []
 
-        for imx in range(int(input_dim/2)):
+        half_dim = self.input_dim // 2
+
+        for imx in range(self.input_dim):
+        # Determine shape and bond_str for each tensor
             if imx == 0:
-                shape = [2,2]
-                tensor = init_tensor(bond_str="ir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                tensor_list.append(tensor)
+                shape = [2, 2]
+                bond_str = "ir"
+            elif imx == self.input_dim - 1:
+                shape = [2, 2]
+                bond_str = "li"
             else:
-                l_label = 2**imx
-                r_label = 2**(imx+1)
-
-                if l_label <= bond_dim and r_label >= bond_dim:
-                    r_label = bond_dim
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
-
-                elif l_label >= bond_dim and r_label >= bond_dim:
-                    l_label = bond_dim
-                    r_label = bond_dim
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
-
+                if imx < half_dim:
+                    l_label, r_label = 2 ** imx, 2 ** (imx + 1)
                 else:
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
+                    r_label, l_label = 2 ** (self.input_dim - 1 - imx), 2 ** (self.input_dim - imx)
 
-        
-        for imx in range(int(input_dim/2), input_dim):
-            if imx == input_dim-1:
-                shape = [2,2]
-                tensor = init_tensor(bond_str="li", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                tensor_list.append(tensor)
-            else:
-                r_label = 2**(input_dim-1-imx)
-                l_label = 2**(input_dim-1-imx+1)
+                # Clip labels to bond_dim
+                l_label = min(l_label, self.bond_dim)
+                r_label = min(r_label, self.bond_dim)
+                shape = [l_label, 2, r_label]
+                bond_str = "lir"
 
-                if l_label >= bond_dim and r_label >= bond_dim:
-                    l_label = bond_dim
-                    r_label = bond_dim
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
+            tensor = init_tensor(
+                bond_str=bond_str,
+                shape=shape,
+                init_method="random_zero",
+                init_std=init_std,
+            )
+            tensor_list.append(tensor)
+            #print("tensor", imx+1, shape)
 
-                elif l_label >= bond_dim and r_label <= bond_dim:
-                    l_label = bond_dim
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
-
-                else:
-                    shape = [l_label,2,r_label]
-                    tensor = init_tensor(bond_str="lir", shape=shape, init_method=("random_zero"), init_std=init_std,)
-                    tensor_list.append(tensor)
-        
-        
-        
         module_list = []
 
-        file_name_1 = f_name
-        fin = open(file_name_1)
-        lines = len(fin.readlines())
-        fin.close()
+        # Load file 
+        data = np.genfromtxt(f_name, dtype=str)
+        lines = data.shape[0]
 
-        for idx in range(input_dim):
-            if idx == 0:
-                for i in range(lines):
-                    data_1 = np.genfromtxt(file_name_1, dtype = str, skip_header=i,  max_rows=1)
-                    if int(data_1[1]) == idx+1:
-                        tensor_list[idx][int(data_1[4])-1, int(data_1[3])-1] = float(data_1[5])
+        # Convert to numeric where possible
+        data = np.array(data)
 
-            elif idx == input_dim-1:
-                for i in range(lines):
-                    data_1 = np.genfromtxt(file_name_1, dtype = str, skip_header=i,  max_rows=1)
-                    if int(data_1[1]) == idx+1:
-                        tensor_list[idx][int(data_1[2])-1, int(data_1[4])-1] = float(data_1[5])
+        for idx in range(self.input_dim):
+            # Select only rows corresponding to current index
+            rows = data[data[:, 1].astype(int) == idx + 1]
 
-            else:
-                for i in range(lines):
-                    data_1 = np.genfromtxt(file_name_1, dtype = str, skip_header=i,  max_rows=1)
-                    if int(data_1[1]) == idx+1:
-                        tensor_list[idx][int(data_1[2])-1, int(data_1[4])-1, int(data_1[3])-1] = float(data_1[5])
-
+            for row in rows:
+                if idx == 0:
+                    i, j, val = int(row[4]) - 1, int(row[3]) - 1, float(row[5])
+                    tensor_list[idx][i, j] = val
+                elif idx == self.input_dim - 1:
+                    i, j, val = int(row[2]) - 1, int(row[4]) - 1, float(row[5])
+                    tensor_list[idx][i, j] = val
+                else:
+                    i, j, k, val = int(row[2]) - 1, int(row[4]) - 1, int(row[3]) - 1, float(row[5])
+                    tensor_list[idx][i, j, k] = val
 
             tensor_list[idx].requires_grad = True
             module_list.append(InputRegion(tensor_list[idx]))
-
+        
+        #print("tensor_list[0]", tensor_list[0])
 
         self.linear_region = LinearRegion(module_list=module_list,)
-        assert len(self.linear_region) == input_dim
+        assert len(self.linear_region) == self.input_dim
         
-
         # Set the rest of our MPS attributes
-        self.feature_dim = feature_dim
-        self.input_dim = input_dim
-        self.bond_dim = bond_dim
         self.module_list = module_list
-        self.f_name = f_name
-        self.init_std = init_std 
 
     def forward(self, input_data):
        
@@ -144,7 +111,7 @@ class MPS(nn.Module):
         """
         assert len(input_data.shape) in [2, 3]
         assert input_data.size(1) == self.input_dim
-
+        
         # If input already has a feature dimension, return it as is
         if len(input_data.shape) == 3:
             if input_data.size(2) != self.feature_dim:
@@ -162,22 +129,23 @@ class MPS(nn.Module):
                     f"self.feature_dim = {self.feature_dim}, "
                     "but default feature_map requires self.feature_dim = 2"
                 )
-            
-            embedded_data = np.zeros((input_data.shape[0], input_data.shape[1], self.feature_dim))
-            embedded_data = torch.tensor(embedded_data)
-            emb_shape = embedded_data.shape
-            for i in range(emb_shape[0]):
-                for j in range(emb_shape[1]):
-                    if input_data[i][j] == -1.0:
-                        embedded_data[i][j][0] = 0.01
-                        embedded_data[i][j][1] = 0.99
-                    else:
-                        embedded_data[i][j][0] = 0.99
-                        embedded_data[i][j][1] = 0.01
-            
 
-        return embedded_data
-    
+            # Initialize embedded_data directly as a torch tensor
+            embedded_data = torch.zeros((*input_data.shape, self.feature_dim), dtype=torch.float32)
+
+            # Boolean mask for input == -1.0
+            mask = (input_data == -1.0)
+
+            # Set values based on mask
+            embedded_data[..., 0] = torch.where(mask, 0.01, 0.99)
+            embedded_data[..., 1] = torch.where(mask, 0.99, 0.01)
+            
+            #print("input_data", input_data)
+            #print("embedded_data", embedded_data)
+
+            return embedded_data
+        
+
     def __len__(self):
         """
         Returns the number of input sites, which equals the input size
@@ -202,63 +170,47 @@ class LinearRegion(nn.Module):
 
         # Wrap as a ModuleList for proper parameter registration
         self.module_list = nn.ModuleList(module_list)
-
+    
     def forward(self, input_data):
+        # Validate input
+        assert len(input_data.shape) == 3, "input_data must be 3D (batch, length, feature_dim)"
+        assert input_data.size(1) == len(self), "Mismatch between input length and module list length"
 
-        input_shape = list(input_data.shape)
-        mod_input = np.random.rand(input_shape[1],input_shape[0],input_shape[2])
+        # Move device info
+        device = input_data.device
 
-        for mk in range(input_shape[0]):
-            for ml in range(input_shape[1]):
-                for mp in range(input_shape[2]):
-                    mod_input[ml,mk,mp] = input_data[mk,ml,mp]
-
-        mod_input = torch.from_numpy(mod_input).float()
-
-        # Check that input_data has the correct shape
-        assert len(input_data.shape) == 3
-        assert input_data.size(1) == len(self)
-
-        # Whether to move intermediate vectors to a GPU (fixes Issue #8)
-        to_cuda = input_data.is_cuda
-        device = f"cuda:{input_data.get_device()}" if to_cuda else "cpu"
+        # Transpose input 
+        # Old shape: (batch, length, feature_dim)
+        # Needed shape: (length, batch, feature_dim)
+        mod_input = input_data.permute(1, 0, 2).contiguous()
 
         contractable_list = []
 
-        for idx in range(len(self.module_list)):
-            if idx == 0:
-                # Contract the input with left tensor
-                mats = torch.einsum("ir,bi->br", [self.module_list[idx].tensor, mod_input[idx]])
-                contractable_list.append(mats)
+        # Compute local contractions (einsum over each module tensor)
+        for idx, module in enumerate(self.module_list):
+            tens = module.tensor
 
-            elif idx == len(self.module_list)-1:
-                # Contract the input with right tensor
-                mats = torch.einsum("li,bi->bl", [self.module_list[idx].tensor, mod_input[idx]])
-                contractable_list.append(mats)
+            if idx == 0:  # left tensor: bond_str = "ir"
+                mats = torch.einsum("ir,bi->br", tens, mod_input[idx])
+            elif idx == len(self.module_list) - 1:  # right tensor: bond_str = "li"
+                mats = torch.einsum("li,bi->bl", tens, mod_input[idx])
+            else:  # middle tensor: bond_str = "lir"
+                mats = torch.einsum("lir,bi->blr", tens, mod_input[idx])
 
-            else:
-                # Contract the input with middle tensor
-                mats = torch.einsum("lir,bi->blr", [self.module_list[idx].tensor, mod_input[idx]])
-                contractable_list.append(mats)
+            contractable_list.append(mats)
 
+        # Sequential bond contractions
+        tem = contractable_list[0].unsqueeze(1)  # (batch, 1, bond)
+        for nl in range(1, len(contractable_list)):
+            nxt = contractable_list[nl]
+            if nl == len(contractable_list) - 1:
+                nxt = nxt.unsqueeze(-1)  # final reshape for right-end contraction
+            tem = torch.bmm(tem, nxt)
 
-        for nl in range(len(self.module_list)-1):
-            if nl == 0:
-                shape = list(contractable_list[nl].shape)
-                contractable_list[nl] = torch.reshape(contractable_list[nl], (shape[0], 1, shape[1]))
-                tem = torch.bmm(contractable_list[nl], contractable_list[nl+1])
-
-            elif nl == len(self.module_list)-2:
-                shape = list(contractable_list[nl+1].shape)
-                contractable_list[nl+1] = torch.reshape(contractable_list[nl+1], (shape[0], shape[1], 1))
-                tem = torch.bmm(tem, contractable_list[nl+1])
-
-            else:
-                tem = torch.bmm(tem, contractable_list[nl+1])
-
-        output = torch.squeeze(tem, (2))
-
+        output = tem.squeeze(-1)  # remove trailing dimension
         return output
+
+
 
     def __len__(self):
         """
